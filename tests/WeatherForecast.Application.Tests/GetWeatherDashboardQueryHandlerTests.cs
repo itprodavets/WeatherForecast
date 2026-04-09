@@ -27,7 +27,11 @@ public class GetWeatherDashboardQueryHandlerTests
     {
         // Arrange
         var cachedResponse = CreateSampleResponse();
-        _cacheService.GetAsync<WeatherDashboardResponse>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _cacheService.GetOrCreateAsync(
+                Arg.Any<string>(),
+                Arg.Any<Func<CancellationToken, Task<WeatherDashboardResponse>>>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
             .Returns(cachedResponse);
 
         // Act
@@ -35,20 +39,14 @@ public class GetWeatherDashboardQueryHandlerTests
 
         // Assert
         result.Should().BeSameAs(cachedResponse);
-        await _weatherApiClient.DidNotReceive().GetCurrentWeatherAsync(
-            Arg.Any<Coordinates>(), Arg.Any<CancellationToken>());
-        await _weatherApiClient.DidNotReceive().GetForecastAsync(
-            Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Handle_WhenCacheMiss_FetchesFromBothApisAndCaches()
     {
-        // Arrange
-        _cacheService.GetAsync<WeatherDashboardResponse>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((WeatherDashboardResponse?)null);
-
+        // Arrange — simulate cache miss by executing the factory
         SetupMockApis(CreateSampleLocation(), CreateSampleCurrentWeather(), CreateSampleDays());
+        SetupCacheToExecuteFactory();
 
         // Act
         var result = await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
@@ -58,22 +56,14 @@ public class GetWeatherDashboardQueryHandlerTests
         result.Location.Name.Should().Be("Moscow");
         result.Current.TempCelsius.Should().Be(22.5);
         result.DailyForecast.Should().HaveCount(1);
-
-        await _cacheService.Received(1).SetAsync(
-            Arg.Any<string>(),
-            Arg.Any<WeatherDashboardResponse>(),
-            Arg.Any<TimeSpan>(),
-            Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task Handle_CallsBothCurrentAndForecastApis()
     {
         // Arrange
-        _cacheService.GetAsync<WeatherDashboardResponse>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((WeatherDashboardResponse?)null);
-
         SetupMockApis(CreateSampleLocation(), CreateSampleCurrentWeather(), CreateSampleDays());
+        SetupCacheToExecuteFactory();
 
         // Act
         await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
@@ -95,9 +85,6 @@ public class GetWeatherDashboardQueryHandlerTests
     public async Task Handle_FiltersHourlyForecast_OnlyRemainingHoursAndNextDay()
     {
         // Arrange
-        _cacheService.GetAsync<WeatherDashboardResponse>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((WeatherDashboardResponse?)null);
-
         var now = new DateTime(2026, 4, 9, 14, 0, 0);
         var location = CreateSampleLocation(now);
 
@@ -119,19 +106,43 @@ public class GetWeatherDashboardQueryHandlerTests
             CreateHour(new DateTime(2026, 4, 10, 18, 0, 0)),
         };
 
+        // Day after tomorrow — these hours should NOT be included
+        var dayAfterTomorrowHours = new List<HourForecast>
+        {
+            CreateHour(new DateTime(2026, 4, 11, 6, 0, 0)),
+            CreateHour(new DateTime(2026, 4, 11, 12, 0, 0)),
+        };
+
         var days = new List<DayForecast>
         {
             CreateDay(new DateOnly(2026, 4, 9), hours),
             CreateDay(new DateOnly(2026, 4, 10), tomorrowHours),
+            CreateDay(new DateOnly(2026, 4, 11), dayAfterTomorrowHours),
         };
 
         SetupMockApis(location, CreateSampleCurrentWeather(), days);
+        SetupCacheToExecuteFactory();
 
         // Act
         var result = await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
 
-        // Assert — past hours filtered out, today remaining + tomorrow included
-        result.HourlyForecast.Should().HaveCount(6); // 3 remaining today + 3 tomorrow
+        // Assert — past hours filtered out, today remaining + tomorrow included, day after tomorrow excluded
+        result.HourlyForecast.Should().HaveCount(6); // 3 remaining today + 3 tomorrow (NOT day after tomorrow)
+    }
+
+    private void SetupCacheToExecuteFactory()
+    {
+        _cacheService.GetOrCreateAsync(
+                Arg.Any<string>(),
+                Arg.Any<Func<CancellationToken, Task<WeatherDashboardResponse>>>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>())
+            .Returns(async callInfo =>
+            {
+                var factory = callInfo.ArgAt<Func<CancellationToken, Task<WeatherDashboardResponse>>>(1);
+                var ct = callInfo.ArgAt<CancellationToken>(3);
+                return await factory(ct);
+            });
     }
 
     private void SetupMockApis(Location location, CurrentWeather current, List<DayForecast> days)

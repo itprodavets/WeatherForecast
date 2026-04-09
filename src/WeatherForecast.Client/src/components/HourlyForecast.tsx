@@ -9,8 +9,8 @@ export function HourlyForecast({ hours }: HourlyForecastProps) {
     <div className="backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6 shadow-2xl">
       <h2 className="text-white font-semibold text-lg mb-4">Hourly Forecast</h2>
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
-        {hours.map((hour, index) => (
-          <HourCard key={index} hour={hour} />
+        {hours.map((hour) => (
+          <HourCard key={hour.time} hour={hour} />
         ))}
       </div>
     </div>

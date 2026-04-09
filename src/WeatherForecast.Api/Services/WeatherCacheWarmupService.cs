@@ -41,6 +41,10 @@ public sealed partial class WeatherCacheWarmupService(
 
             LogWarmupComplete(logger);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Clean shutdown — not an error, do not log as failure
+        }
         catch (Exception ex)
         {
             LogWarmupFailed(logger, ex);

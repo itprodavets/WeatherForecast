@@ -11,9 +11,14 @@ public sealed partial class GlobalExceptionHandler(ILogger<GlobalExceptionHandle
         Exception exception,
         CancellationToken cancellationToken)
     {
-        LogUnhandledException(logger, exception.Message, exception);
+        // Unwrap AggregateException to get the real cause (e.g. from Task.WhenAll)
+        var actualException = exception is AggregateException aggregate
+            ? aggregate.GetBaseException()
+            : exception;
 
-        var (statusCode, title, detail) = exception switch
+        LogUnhandledException(logger, actualException.Message, actualException);
+
+        var (statusCode, title, detail) = actualException switch
         {
             HttpRequestException => ((int)HttpStatusCode.ServiceUnavailable,
                 "Weather service is temporarily unavailable",

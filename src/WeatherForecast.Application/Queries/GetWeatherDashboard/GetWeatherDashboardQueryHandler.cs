@@ -27,13 +27,21 @@ public sealed partial class GetWeatherDashboardQueryHandler(
         var coordinates = WeatherDefaults.DefaultCoordinates;
         var cacheKey = BuildCacheKey(coordinates);
 
-        var cached = await cacheService.GetAsync<WeatherDashboardResponse>(cacheKey, cancellationToken);
-        if (cached is not null)
-        {
-            LogCacheHit(logger);
-            return cached;
-        }
+        // GetOrCreateAsync prevents cache stampede — only one request hits the API
+        // when multiple concurrent requests encounter a cache miss
+        var response = await cacheService.GetOrCreateAsync(
+            cacheKey,
+            ct => FetchWeatherDataAsync(coordinates, ct),
+            CacheDuration,
+            cancellationToken);
 
+        return response;
+    }
+
+    private async Task<WeatherDashboardResponse> FetchWeatherDataAsync(
+        Coordinates coordinates,
+        CancellationToken cancellationToken)
+    {
         LogFetchingFromApi(logger);
 
         // Two separate API calls as per requirements (current.json + forecast.json)
@@ -41,30 +49,37 @@ public sealed partial class GetWeatherDashboardQueryHandler(
         var currentTask = weatherApiClient.GetCurrentWeatherAsync(coordinates, cancellationToken);
         var forecastTask = weatherApiClient.GetForecastAsync(coordinates, WeatherDefaults.ForecastDays, cancellationToken);
 
-        await Task.WhenAll(currentTask, forecastTask);
+        // Await individually for proper exception unwrapping
+        // (Task.WhenAll wraps in AggregateException, individual await preserves original type)
+        try
+        {
+            await Task.WhenAll(currentTask, forecastTask);
+        }
+        catch
+        {
+            // Swallow — we re-await below for proper exception type propagation
+        }
 
-        var (location, current) = currentTask.Result;
-        var (_, days) = forecastTask.Result;
+        var (location, current) = await currentTask;
+        var (_, days) = await forecastTask;
 
         var now = location.LocalTime;
-        var tomorrow = DateOnly.FromDateTime(now).AddDays(1);
+        var today = DateOnly.FromDateTime(now);
+
+        // Filter: remaining hours today + all hours tomorrow (2 days window)
+        var endOfTomorrow = today.AddDays(2).ToDateTime(TimeOnly.MinValue);
 
         var hourlyForecast = days
             .SelectMany(d => d.Hours)
-            .Where(h => h.Time >= now && h.Time < tomorrow.AddDays(1).ToDateTime(TimeOnly.MinValue))
+            .Where(h => h.Time >= now && h.Time < endOfTomorrow)
             .ToList();
 
         var response = WeatherDashboardMapper.ToResponse(location, current, hourlyForecast, days);
-
-        await cacheService.SetAsync(cacheKey, response, CacheDuration, cancellationToken);
 
         LogCached(logger, CacheDuration.TotalMinutes);
 
         return response;
     }
-
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Weather dashboard served from cache")]
-    private static partial void LogCacheHit(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Fetching fresh weather data from API")]
     private static partial void LogFetchingFromApi(ILogger logger);

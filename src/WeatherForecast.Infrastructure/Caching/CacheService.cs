@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
@@ -12,13 +13,16 @@ internal sealed partial class CacheService(
     IMemoryCache memoryCache,
     IDistributedCache distributedCache,
     IOptions<CacheOptions> cacheOptions,
-    ILogger<CacheService> logger) : ICacheService
+    ILogger<CacheService> logger) : ICacheService, IDisposable
 {
     private readonly CacheOptions _cacheOptions = cacheOptions.Value;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
+
+    // Per-key locks to prevent cache stampede (thunder herd)
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
     {
@@ -53,19 +57,50 @@ internal sealed partial class CacheService(
         return null;
     }
 
+    public async Task<T> GetOrCreateAsync<T>(
+        string key,
+        Func<CancellationToken, Task<T>> factory,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default) where T : class
+    {
+        // Fast path — check cache without lock
+        var cached = await GetAsync<T>(key, cancellationToken);
+        if (cached is not null)
+            return cached;
+
+        // Slow path — acquire per-key lock to prevent stampede
+        var semaphore = _locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(cancellationToken);
+
+        try
+        {
+            // Double-check after acquiring lock
+            cached = await GetAsync<T>(key, cancellationToken);
+            if (cached is not null)
+                return cached;
+
+            var value = await factory(cancellationToken);
+            await SetAsync(key, value, expiration, cancellationToken);
+            return value;
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+    }
+
     public async Task SetAsync<T>(string key, T value, TimeSpan expiration, CancellationToken cancellationToken = default) where T : class
     {
         // L1: Memory cache
         memoryCache.Set(key, value, expiration);
 
-        // L2: Distributed cache
+        // L2: Distributed cache — use the caller-provided expiration
         try
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
-            var distributedTtl = TimeSpan.FromMinutes(_cacheOptions.DistributedCacheTtlMinutes);
             var options = new DistributedCacheEntryOptions
             {
-                AbsoluteExpirationRelativeToNow = distributedTtl > expiration ? distributedTtl : expiration
+                AbsoluteExpirationRelativeToNow = expiration
             };
             await distributedCache.SetAsync(key, bytes, options, cancellationToken);
         }
@@ -86,6 +121,14 @@ internal sealed partial class CacheService(
         catch (Exception ex)
         {
             LogL2RemoveError(logger, key, ex);
+        }
+    }
+
+    public void Dispose()
+    {
+        foreach (var semaphore in _locks.Values)
+        {
+            semaphore.Dispose();
         }
     }
 

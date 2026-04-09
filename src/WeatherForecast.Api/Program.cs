@@ -99,18 +99,28 @@ try
 
     var app = builder.Build();
 
-    // Middleware pipeline (order matters)
+    // Middleware pipeline (order matters — exception handler must wrap everything)
     app.UseResponseCompression();
-    app.UseMiddleware<ResponseTimeMiddleware>();
     app.UseExceptionHandler();
+    app.UseMiddleware<ResponseTimeMiddleware>();
 
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
+    if (app.Environment.IsDevelopment())
     {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Weather Forecast API v1");
-    });
+        app.UseSwagger();
+        app.UseSwaggerUI(options =>
+        {
+            options.SwaggerEndpoint("/swagger/v1/swagger.json", "Weather Forecast API v1");
+        });
+    }
 
-    app.UseSerilogRequestLogging();
+    app.UseSerilogRequestLogging(options =>
+    {
+        // Redact API keys and sensitive query parameters from request logs
+        options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+        {
+            diagnosticContext.Set("RequestPath", httpContext.Request.Path);
+        };
+    });
     app.UseCors("AllowReactDev");
     app.UseRateLimiter();
 
