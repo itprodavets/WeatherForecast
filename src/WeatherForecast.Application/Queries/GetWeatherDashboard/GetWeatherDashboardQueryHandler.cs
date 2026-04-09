@@ -3,6 +3,7 @@ using MediatR;
 using Microsoft.Extensions.Logging;
 using WeatherForecast.Application.DTOs;
 using WeatherForecast.Application.Interfaces;
+using WeatherForecast.Application.Mapping;
 using WeatherForecast.Domain.ValueObjects;
 
 namespace WeatherForecast.Application.Queries.GetWeatherDashboard;
@@ -13,14 +14,19 @@ public sealed partial class GetWeatherDashboardQueryHandler(
     ILogger<GetWeatherDashboardQueryHandler> logger)
     : IRequestHandler<GetWeatherDashboardQuery, WeatherDashboardResponse>
 {
-    private const string CacheKey = "weather:dashboard:moscow";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
+
+    private static string BuildCacheKey(Coordinates coordinates) =>
+        string.Create(CultureInfo.InvariantCulture, $"weather:dashboard:{coordinates.Latitude}:{coordinates.Longitude}");
 
     public async Task<WeatherDashboardResponse> Handle(
         GetWeatherDashboardQuery request,
         CancellationToken cancellationToken)
     {
-        var cached = await cacheService.GetAsync<WeatherDashboardResponse>(CacheKey, cancellationToken);
+        var coordinates = Coordinates.Moscow;
+        var cacheKey = BuildCacheKey(coordinates);
+
+        var cached = await cacheService.GetAsync<WeatherDashboardResponse>(cacheKey, cancellationToken);
         if (cached is not null)
         {
             LogCacheHit(logger);
@@ -28,8 +34,6 @@ public sealed partial class GetWeatherDashboardQueryHandler(
         }
 
         LogFetchingFromApi(logger);
-
-        var coordinates = Coordinates.Moscow;
 
         var currentTask = weatherApiClient.GetCurrentWeatherAsync(coordinates, cancellationToken);
         var forecastTask = weatherApiClient.GetForecastAsync(coordinates, days: 3, cancellationToken);
@@ -47,61 +51,9 @@ public sealed partial class GetWeatherDashboardQueryHandler(
             .Where(h => h.Time >= now && h.Time < tomorrow.AddDays(1).ToDateTime(TimeOnly.MinValue))
             .ToList();
 
-        var response = new WeatherDashboardResponse
-        {
-            Location = new LocationDto
-            {
-                Name = location.Name,
-                Region = location.Region,
-                Country = location.Country,
-                TimeZone = location.TimeZone,
-                LocalTime = location.LocalTime
-            },
-            Current = new CurrentWeatherDto
-            {
-                TempCelsius = current.Temperature.Celsius,
-                FeelsLikeCelsius = current.Temperature.FeelsLike,
-                Humidity = current.Humidity,
-                PressureMb = current.PressureMb,
-                WindSpeedKph = current.Wind.SpeedKph,
-                WindDirection = current.Wind.Direction,
-                CloudCover = current.CloudCover,
-                UvIndex = current.UvIndex,
-                VisibilityKm = current.VisibilityKm,
-                ConditionText = current.ConditionText,
-                ConditionIconUrl = current.ConditionIconUrl,
-                IsDay = current.IsDay,
-                LastUpdated = current.LastUpdated
-            },
-            HourlyForecast = hourlyForecast.Select(h => new HourForecastDto
-            {
-                Time = h.Time,
-                TempCelsius = h.TempCelsius,
-                FeelsLikeCelsius = h.FeelsLikeCelsius,
-                ConditionText = h.ConditionText,
-                ConditionIconUrl = h.ConditionIconUrl,
-                WindSpeedKph = h.WindSpeedKph,
-                Humidity = h.Humidity,
-                ChanceOfRain = h.ChanceOfRain,
-                IsDay = h.IsDay
-            }).ToList(),
-            DailyForecast = days.Select(d => new DayForecastDto
-            {
-                Date = d.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                MaxTempCelsius = d.MaxTempCelsius,
-                MinTempCelsius = d.MinTempCelsius,
-                AvgTempCelsius = d.AvgTempCelsius,
-                MaxWindSpeedKph = d.MaxWindSpeedKph,
-                AvgHumidity = d.AvgHumidity,
-                ChanceOfRain = d.ChanceOfRain,
-                TotalPrecipitationMm = d.TotalPrecipitationMm,
-                UvIndex = d.UvIndex,
-                ConditionText = d.ConditionText,
-                ConditionIconUrl = d.ConditionIconUrl
-            }).ToList()
-        };
+        var response = WeatherDashboardMapper.ToResponse(location, current, hourlyForecast, days);
 
-        await cacheService.SetAsync(CacheKey, response, CacheDuration, cancellationToken);
+        await cacheService.SetAsync(cacheKey, response, CacheDuration, cancellationToken);
 
         LogCached(logger, CacheDuration.TotalMinutes);
 
