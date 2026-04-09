@@ -13,40 +13,19 @@ namespace WeatherForecast.Application.Tests;
 public class GetWeatherDashboardQueryHandlerTests
 {
     private readonly IWeatherApiClient _weatherApiClient = Substitute.For<IWeatherApiClient>();
-    private readonly ICacheService _cacheService = Substitute.For<ICacheService>();
     private readonly ILogger<GetWeatherDashboardQueryHandler> _logger = Substitute.For<ILogger<GetWeatherDashboardQueryHandler>>();
     private readonly GetWeatherDashboardQueryHandler _handler;
 
     public GetWeatherDashboardQueryHandlerTests()
     {
-        _handler = new GetWeatherDashboardQueryHandler(_weatherApiClient, _cacheService, _logger);
+        _handler = new GetWeatherDashboardQueryHandler(_weatherApiClient, _logger);
     }
 
     [Fact]
-    public async Task Handle_WhenCacheHit_ReturnsCachedData()
+    public async Task Handle_ReturnsWeatherDashboardWithCorrectData()
     {
         // Arrange
-        var cachedResponse = CreateSampleResponse();
-        _cacheService.GetOrCreateAsync(
-                Arg.Any<string>(),
-                Arg.Any<Func<CancellationToken, Task<WeatherDashboardResponse>>>(),
-                Arg.Any<TimeSpan>(),
-                Arg.Any<CancellationToken>())
-            .Returns(cachedResponse);
-
-        // Act
-        var result = await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
-
-        // Assert
-        result.Should().BeSameAs(cachedResponse);
-    }
-
-    [Fact]
-    public async Task Handle_WhenCacheMiss_FetchesFromBothApisAndCaches()
-    {
-        // Arrange — simulate cache miss by executing the factory
         SetupMockApis(CreateSampleLocation(), CreateSampleCurrentWeather(), CreateSampleDays());
-        SetupCacheToExecuteFactory();
 
         // Act
         var result = await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
@@ -63,7 +42,6 @@ public class GetWeatherDashboardQueryHandlerTests
     {
         // Arrange
         SetupMockApis(CreateSampleLocation(), CreateSampleCurrentWeather(), CreateSampleDays());
-        SetupCacheToExecuteFactory();
 
         // Act
         await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
@@ -121,28 +99,23 @@ public class GetWeatherDashboardQueryHandlerTests
         };
 
         SetupMockApis(location, CreateSampleCurrentWeather(), days);
-        SetupCacheToExecuteFactory();
 
         // Act
         var result = await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
 
         // Assert — past hours filtered out, today remaining + tomorrow included, day after tomorrow excluded
-        result.HourlyForecast.Should().HaveCount(6); // 3 remaining today + 3 tomorrow (NOT day after tomorrow)
+        result.HourlyForecast.Should().HaveCount(6); // 3 remaining today + 3 tomorrow
     }
 
-    private void SetupCacheToExecuteFactory()
+    [Fact]
+    public async Task Query_ImplementsICacheable_WithCorrectKey()
     {
-        _cacheService.GetOrCreateAsync(
-                Arg.Any<string>(),
-                Arg.Any<Func<CancellationToken, Task<WeatherDashboardResponse>>>(),
-                Arg.Any<TimeSpan>(),
-                Arg.Any<CancellationToken>())
-            .Returns(async callInfo =>
-            {
-                var factory = callInfo.ArgAt<Func<CancellationToken, Task<WeatherDashboardResponse>>>(1);
-                var ct = callInfo.ArgAt<CancellationToken>(3);
-                return await factory(ct);
-            });
+        // Arrange
+        var query = new GetWeatherDashboardQuery();
+
+        // Assert — query provides cache configuration for CachingBehavior
+        query.CacheKey.Should().Contain("weather:dashboard:");
+        query.CacheDuration.Should().Be(TimeSpan.FromMinutes(5));
     }
 
     private void SetupMockApis(Location location, CurrentWeather current, List<DayForecast> days)
@@ -153,14 +126,6 @@ public class GetWeatherDashboardQueryHandlerTests
         _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns((location, days));
     }
-
-    private static WeatherDashboardResponse CreateSampleResponse() => new()
-    {
-        Location = new LocationDto { Name = "Moscow", Region = "Moscow", Country = "Russia", TimeZone = "Europe/Moscow", LocalTime = DateTime.Now },
-        Current = new CurrentWeatherDto { TempCelsius = 20, FeelsLikeCelsius = 18, Humidity = 60, PressureMb = 1013, WindSpeedKph = 10, WindDirection = "N", CloudCover = 50, UvIndex = 3, VisibilityKm = 10, ConditionText = "Partly cloudy", ConditionIconUrl = "https://cdn.weatherapi.com/weather/64x64/day/116.png", IsDay = true, LastUpdated = DateTime.Now },
-        HourlyForecast = [],
-        DailyForecast = []
-    };
 
     private static CurrentWeather CreateSampleCurrentWeather() => new()
     {
