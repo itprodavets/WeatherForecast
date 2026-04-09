@@ -12,6 +12,7 @@
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.5" />
 
     <!-- Infrastructure -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.4.0" />

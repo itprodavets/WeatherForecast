@@ -13,19 +13,27 @@ public sealed partial class GlobalExceptionHandler(ILogger<GlobalExceptionHandle
     {
         LogUnhandledException(logger, exception.Message, exception);
 
-        var (statusCode, title) = exception switch
+        var (statusCode, title, detail) = exception switch
         {
-            HttpRequestException => ((int)HttpStatusCode.ServiceUnavailable, "Weather service is temporarily unavailable"),
-            TaskCanceledException => ((int)HttpStatusCode.ServiceUnavailable, "Request timed out"),
-            InvalidOperationException => ((int)HttpStatusCode.BadGateway, "Invalid response from weather service"),
-            _ => ((int)HttpStatusCode.InternalServerError, "An unexpected error occurred")
+            HttpRequestException => ((int)HttpStatusCode.ServiceUnavailable,
+                "Weather service is temporarily unavailable",
+                "The upstream weather API is not responding. Please try again later."),
+            TaskCanceledException => ((int)HttpStatusCode.ServiceUnavailable,
+                "Request timed out",
+                "The request to the weather service timed out. Please try again."),
+            InvalidOperationException => ((int)HttpStatusCode.BadGateway,
+                "Invalid response from weather service",
+                "Received an unexpected response from the weather API."),
+            _ => ((int)HttpStatusCode.InternalServerError,
+                "An unexpected error occurred",
+                "An internal server error occurred. Please try again later.")
         };
 
         var problemDetails = new ProblemDetails
         {
             Status = statusCode,
             Title = title,
-            Detail = exception.Message,
+            Detail = detail,
             Instance = httpContext.Request.Path
         };
 

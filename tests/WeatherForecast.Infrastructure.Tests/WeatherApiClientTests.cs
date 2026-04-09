@@ -33,31 +33,7 @@ public class WeatherApiClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GetCurrentWeatherAsync_ReturnsCurrentWeather()
-    {
-        // Arrange
-        _server.Given(Request.Create().WithPath("/v1/current.json").UsingGet())
-            .RespondWith(Response.Create()
-                .WithStatusCode(200)
-                .WithHeader("Content-Type", "application/json")
-                .WithBody(CurrentWeatherJson));
-
-        // Act
-        var result = await _client.GetCurrentWeatherAsync(Coordinates.Moscow);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Temperature.Celsius.Should().Be(22.0);
-        result.Temperature.FeelsLike.Should().Be(21.0);
-        result.Humidity.Should().Be(55);
-        result.Wind.SpeedKph.Should().Be(15.1);
-        result.Wind.Direction.Should().Be("NW");
-        result.ConditionText.Should().Be("Partly cloudy");
-        result.IsDay.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task GetForecastAsync_ReturnsForecastWithDays()
+    public async Task GetForecastAsync_ReturnsForecastWithLocationAndCurrentAndDays()
     {
         // Arrange
         _server.Given(Request.Create().WithPath("/v1/forecast.json").UsingGet())
@@ -67,12 +43,21 @@ public class WeatherApiClientTests : IDisposable
                 .WithBody(ForecastJson));
 
         // Act
-        var (location, days) = await _client.GetForecastAsync(Coordinates.Moscow, 3);
+        var (location, current, days) = await _client.GetForecastAsync(Coordinates.Moscow, 3);
 
         // Assert
         location.Should().NotBeNull();
         location.Name.Should().Be("Moscow");
         location.TimeZone.Should().Be("Europe/Moscow");
+
+        current.Should().NotBeNull();
+        current.Temperature.Celsius.Should().Be(22.0);
+        current.Temperature.FeelsLike.Should().Be(21.0);
+        current.Humidity.Should().Be(55);
+        current.Wind.SpeedKph.Should().Be(15.1);
+        current.Wind.Direction.Should().Be("NW");
+        current.ConditionText.Should().Be("Partly cloudy");
+        current.IsDay.Should().BeTrue();
 
         days.Should().HaveCount(1);
         days[0].MaxTempCelsius.Should().Be(25.0);
@@ -82,32 +67,57 @@ public class WeatherApiClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GetCurrentWeatherAsync_WhenApiReturnsError_ThrowsHttpRequestException()
+    public async Task GetForecastAsync_WhenApiReturnsError_ThrowsHttpRequestException()
     {
         // Arrange
-        _server.Given(Request.Create().WithPath("/v1/current.json").UsingGet())
+        _server.Given(Request.Create().WithPath("/v1/forecast.json").UsingGet())
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError));
 
         // Act & Assert
         await Assert.ThrowsAsync<HttpRequestException>(
-            () => _client.GetCurrentWeatherAsync(Coordinates.Moscow));
+            () => _client.GetForecastAsync(Coordinates.Moscow, 3));
     }
 
     [Fact]
-    public async Task GetCurrentWeatherAsync_CorrectlyMapsIconUrl()
+    public async Task GetForecastAsync_CorrectlyMapsIconUrl()
     {
         // Arrange
-        _server.Given(Request.Create().WithPath("/v1/current.json").UsingGet())
+        _server.Given(Request.Create().WithPath("/v1/forecast.json").UsingGet())
             .RespondWith(Response.Create()
                 .WithStatusCode(200)
                 .WithHeader("Content-Type", "application/json")
-                .WithBody(CurrentWeatherJson));
+                .WithBody(ForecastJson));
 
         // Act
-        var result = await _client.GetCurrentWeatherAsync(Coordinates.Moscow);
+        var (_, current, days) = await _client.GetForecastAsync(Coordinates.Moscow, 3);
 
         // Assert — icon URL should be normalized with https:
-        result.ConditionIconUrl.Should().StartWith("https://");
+        current.ConditionIconUrl.Should().StartWith("https://");
+        days[0].ConditionIconUrl.Should().StartWith("https://");
+    }
+
+    [Fact]
+    public async Task GetForecastAsync_SendsCorrectQueryParameters()
+    {
+        // Arrange
+        _server.Given(Request.Create().WithPath("/v1/forecast.json").UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(ForecastJson));
+
+        // Act
+        await _client.GetForecastAsync(Coordinates.Moscow, 3);
+
+        // Assert — verify the request was made with correct parameters
+        var requests = _server.LogEntries;
+        requests.Should().ContainSingle();
+
+        var request = requests[0];
+        var query = request.RequestMessage!.RawQuery ?? string.Empty;
+        query.Should().Contain("key=test-key");
+        query.Should().Contain("q=55.7558,37.6173");
+        query.Should().Contain("days=3");
     }
 
     public void Dispose()
@@ -116,7 +126,7 @@ public class WeatherApiClientTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private const string CurrentWeatherJson = """
+    private const string ForecastJson = """
         {
             "location": {
                 "name": "Moscow",
@@ -144,20 +154,6 @@ public class WeatherApiClientTests : IDisposable
                 },
                 "is_day": 1,
                 "last_updated": "2026-04-09 14:00"
-            }
-        }
-        """;
-
-    private const string ForecastJson = """
-        {
-            "location": {
-                "name": "Moscow",
-                "region": "Moscow City",
-                "country": "Russia",
-                "lat": 55.75,
-                "lon": 37.62,
-                "tz_id": "Europe/Moscow",
-                "localtime": "2026-04-09 14:00"
             },
             "forecast": {
                 "forecastday": [

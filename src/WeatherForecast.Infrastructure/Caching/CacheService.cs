@@ -2,15 +2,19 @@ using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using WeatherForecast.Application.Interfaces;
+using WeatherForecast.Infrastructure.Configuration;
 
 namespace WeatherForecast.Infrastructure.Caching;
 
 internal sealed partial class CacheService(
     IMemoryCache memoryCache,
     IDistributedCache distributedCache,
+    IOptions<CacheOptions> cacheOptions,
     ILogger<CacheService> logger) : ICacheService
 {
+    private readonly CacheOptions _cacheOptions = cacheOptions.Value;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -35,7 +39,7 @@ internal sealed partial class CacheService(
                 if (value is not null)
                 {
                     LogL2Hit(logger, key);
-                    memoryCache.Set(key, value, TimeSpan.FromMinutes(5));
+                    memoryCache.Set(key, value, TimeSpan.FromMinutes(_cacheOptions.MemoryCacheTtlMinutes));
                     return value;
                 }
             }
@@ -58,9 +62,10 @@ internal sealed partial class CacheService(
         try
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
+            var distributedTtl = TimeSpan.FromMinutes(_cacheOptions.DistributedCacheTtlMinutes);
             var options = new DistributedCacheEntryOptions
             {
-                AbsoluteExpirationRelativeToNow = expiration * 3 // L2 lives longer
+                AbsoluteExpirationRelativeToNow = distributedTtl > expiration ? distributedTtl : expiration
             };
             await distributedCache.SetAsync(key, bytes, options, cancellationToken);
         }

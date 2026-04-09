@@ -1,13 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
-using MediatR;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using WeatherForecast.Application.DTOs;
 using WeatherForecast.Application.Interfaces;
-using WeatherForecast.Application.Queries.GetWeatherDashboard;
 using WeatherForecast.Domain.ValueObjects;
 
 namespace WeatherForecast.Api.Tests;
@@ -93,10 +91,9 @@ public class WeatherEndpointTests : IClassFixture<WebApplicationFactory<Program>
     public async Task GetDashboard_WhenApiThrows_ReturnsServiceUnavailable()
     {
         // Arrange
-        _weatherApiClient.GetCurrentWeatherAsync(Arg.Any<Coordinates>(), Arg.Any<CancellationToken>())
-            .Returns<Domain.Entities.CurrentWeather>(x => throw new HttpRequestException("Weather API is down"));
         _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns<(Domain.Entities.Location, List<Domain.Entities.DayForecast>)>(x => throw new HttpRequestException("Weather API is down"));
+            .Returns<(Domain.Entities.Location, Domain.Entities.CurrentWeather, List<Domain.Entities.DayForecast>)>(
+                x => throw new HttpRequestException("Weather API is down"));
 
         // Act
         var response = await _client.GetAsync("/api/weather/dashboard");
@@ -107,22 +104,6 @@ public class WeatherEndpointTests : IClassFixture<WebApplicationFactory<Program>
 
     private void SetupMockWeatherApi()
     {
-        _weatherApiClient.GetCurrentWeatherAsync(Arg.Any<Coordinates>(), Arg.Any<CancellationToken>())
-            .Returns(new Domain.Entities.CurrentWeather
-            {
-                Temperature = new Domain.ValueObjects.Temperature(22.0, 20.0),
-                Wind = new Domain.ValueObjects.Wind(15.0, "NW", 315),
-                Humidity = 55,
-                PressureMb = 1015,
-                CloudCover = 40,
-                UvIndex = 4,
-                VisibilityKm = 10,
-                ConditionText = "Partly cloudy",
-                ConditionIconUrl = "https://cdn.weatherapi.com/weather/64x64/day/116.png",
-                IsDay = true,
-                LastUpdated = DateTime.UtcNow
-            });
-
         _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns((
                 new Domain.Entities.Location
@@ -134,6 +115,20 @@ public class WeatherEndpointTests : IClassFixture<WebApplicationFactory<Program>
                     Longitude = 37.62,
                     TimeZone = "Europe/Moscow",
                     LocalTime = DateTime.UtcNow
+                },
+                new Domain.Entities.CurrentWeather
+                {
+                    Temperature = new Domain.ValueObjects.Temperature(22.0, 20.0),
+                    Wind = new Domain.ValueObjects.Wind(15.0, "NW", 315),
+                    Humidity = 55,
+                    PressureMb = 1015,
+                    CloudCover = 40,
+                    UvIndex = 4,
+                    VisibilityKm = 10,
+                    ConditionText = "Partly cloudy",
+                    ConditionIconUrl = "https://cdn.weatherapi.com/weather/64x64/day/116.png",
+                    IsDay = true,
+                    LastUpdated = DateTime.UtcNow
                 },
                 new List<Domain.Entities.DayForecast>
                 {

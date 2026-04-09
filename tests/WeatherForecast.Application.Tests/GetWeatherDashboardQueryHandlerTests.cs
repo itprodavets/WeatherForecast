@@ -34,8 +34,8 @@ public class GetWeatherDashboardQueryHandlerTests
 
         // Assert
         result.Should().BeSameAs(cachedResponse);
-        await _weatherApiClient.DidNotReceive().GetCurrentWeatherAsync(Arg.Any<Coordinates>(), Arg.Any<CancellationToken>());
-        await _weatherApiClient.DidNotReceive().GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await _weatherApiClient.DidNotReceive().GetForecastAsync(
+            Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -45,14 +45,7 @@ public class GetWeatherDashboardQueryHandlerTests
         _cacheService.GetAsync<WeatherDashboardResponse>(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((WeatherDashboardResponse?)null);
 
-        var currentWeather = CreateSampleCurrentWeather();
-        var location = CreateSampleLocation();
-        var days = CreateSampleDays();
-
-        _weatherApiClient.GetCurrentWeatherAsync(Arg.Any<Coordinates>(), Arg.Any<CancellationToken>())
-            .Returns(currentWeather);
-        _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), 3, Arg.Any<CancellationToken>())
-            .Returns((location, days));
+        SetupForecastApi(CreateSampleLocation(), CreateSampleCurrentWeather(), CreateSampleDays());
 
         // Act
         var result = await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
@@ -77,18 +70,12 @@ public class GetWeatherDashboardQueryHandlerTests
         _cacheService.GetAsync<WeatherDashboardResponse>(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((WeatherDashboardResponse?)null);
 
-        _weatherApiClient.GetCurrentWeatherAsync(Arg.Any<Coordinates>(), Arg.Any<CancellationToken>())
-            .Returns(CreateSampleCurrentWeather());
-        _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns((CreateSampleLocation(), CreateSampleDays()));
+        SetupForecastApi(CreateSampleLocation(), CreateSampleCurrentWeather(), CreateSampleDays());
 
         // Act
         await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
 
         // Assert
-        await _weatherApiClient.Received(1).GetCurrentWeatherAsync(
-            Arg.Is<Coordinates>(c => c == Coordinates.Moscow),
-            Arg.Any<CancellationToken>());
         await _weatherApiClient.Received(1).GetForecastAsync(
             Arg.Is<Coordinates>(c => c == Coordinates.Moscow),
             3,
@@ -129,16 +116,19 @@ public class GetWeatherDashboardQueryHandlerTests
             CreateDay(new DateOnly(2026, 4, 10), tomorrowHours),
         };
 
-        _weatherApiClient.GetCurrentWeatherAsync(Arg.Any<Coordinates>(), Arg.Any<CancellationToken>())
-            .Returns(CreateSampleCurrentWeather());
-        _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns((location, days));
+        SetupForecastApi(location, CreateSampleCurrentWeather(), days);
 
         // Act
         var result = await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
 
         // Assert — past hours filtered out, today remaining + tomorrow included
         result.HourlyForecast.Should().HaveCount(6); // 3 remaining today + 3 tomorrow
+    }
+
+    private void SetupForecastApi(Location location, CurrentWeather current, List<DayForecast> days)
+    {
+        _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((location, current, days));
     }
 
     private static WeatherDashboardResponse CreateSampleResponse() => new()

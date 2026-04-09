@@ -35,13 +35,8 @@ public sealed partial class GetWeatherDashboardQueryHandler(
 
         LogFetchingFromApi(logger);
 
-        var currentTask = weatherApiClient.GetCurrentWeatherAsync(coordinates, cancellationToken);
-        var forecastTask = weatherApiClient.GetForecastAsync(coordinates, days: 3, cancellationToken);
-
-        await Task.WhenAll(currentTask, forecastTask);
-
-        var current = await currentTask;
-        var (location, days) = await forecastTask;
+        var (location, current, days) = await weatherApiClient.GetForecastAsync(
+            coordinates, days: 3, cancellationToken);
 
         var now = location.LocalTime;
         var tomorrow = DateOnly.FromDateTime(now).AddDays(1);

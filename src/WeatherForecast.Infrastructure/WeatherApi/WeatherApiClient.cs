@@ -17,21 +17,7 @@ internal sealed partial class WeatherApiClient(
 {
     private readonly WeatherApiOptions _options = options.Value;
 
-    public async Task<CurrentWeather> GetCurrentWeatherAsync(
-        Coordinates coordinates,
-        CancellationToken cancellationToken = default)
-    {
-        var url = BuildUrl("current.json", coordinates);
-
-        LogFetchingCurrent(logger, coordinates.Latitude, coordinates.Longitude);
-
-        var response = await httpClient.GetFromJsonAsync<CurrentResponse>(url, cancellationToken)
-            ?? throw new InvalidOperationException("Weather API returned null response for current weather");
-
-        return WeatherApiMapper.MapToCurrent(response.Current);
-    }
-
-    public async Task<(Location Location, List<DayForecast> Days)> GetForecastAsync(
+    public async Task<(Location Location, CurrentWeather Current, List<DayForecast> Days)> GetForecastAsync(
         Coordinates coordinates,
         int days,
         CancellationToken cancellationToken = default)
@@ -44,19 +30,17 @@ internal sealed partial class WeatherApiClient(
             ?? throw new InvalidOperationException("Weather API returned null response for forecast");
 
         var location = WeatherApiMapper.MapToLocation(response.Location);
+        var current = WeatherApiMapper.MapToCurrent(response.Current);
         var dayForecasts = response.Forecast.ForecastDay.Select(WeatherApiMapper.MapToDay).ToList();
 
-        return (location, dayForecasts);
+        return (location, current, dayForecasts);
     }
 
     private string BuildUrl(string endpoint, Coordinates coordinates, string? extra = null)
     {
         var q = string.Create(CultureInfo.InvariantCulture, $"{coordinates.Latitude},{coordinates.Longitude}");
-        return $"{_options.BaseUrl}/v1/{endpoint}?key={_options.ApiKey}&q={q}{extra}";
+        return $"/v1/{endpoint}?key={_options.ApiKey}&q={q}{extra}";
     }
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "Fetching current weather for ({Lat}, {Lon})")]
-    private static partial void LogFetchingCurrent(ILogger logger, double lat, double lon);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Fetching {Days}-day forecast for ({Lat}, {Lon})")]
     private static partial void LogFetchingForecast(ILogger logger, double lat, double lon, int days);

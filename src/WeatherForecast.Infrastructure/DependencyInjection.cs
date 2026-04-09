@@ -23,11 +23,13 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<WeatherApiOptions>(
-            configuration.GetSection(WeatherApiOptions.SectionName));
+        services.AddOptions<WeatherApiOptions>()
+            .BindConfiguration(WeatherApiOptions.SectionName)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         var weatherOptions = configuration
-            .GetSection(WeatherApiOptions.SectionName)
+            .GetRequiredSection(WeatherApiOptions.SectionName)
             .Get<WeatherApiOptions>()!;
 
         services.AddHttpClient<IWeatherApiClient, WeatherApiClient>(client =>
@@ -50,8 +52,10 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<CacheOptions>(
-            configuration.GetSection(CacheOptions.SectionName));
+        services.AddOptions<CacheOptions>()
+            .BindConfiguration(CacheOptions.SectionName)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         var cacheOptions = configuration
             .GetSection(CacheOptions.SectionName)
