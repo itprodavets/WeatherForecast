@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using WeatherForecast.Application.Configuration;
 using WeatherForecast.Application.DTOs;
 using WeatherForecast.Application.Interfaces;
 using WeatherForecast.Application.Queries.GetWeatherDashboard;
@@ -34,18 +35,20 @@ public class GetWeatherDashboardQueryHandlerTests
 
         // Assert
         result.Should().BeSameAs(cachedResponse);
+        await _weatherApiClient.DidNotReceive().GetCurrentWeatherAsync(
+            Arg.Any<Coordinates>(), Arg.Any<CancellationToken>());
         await _weatherApiClient.DidNotReceive().GetForecastAsync(
             Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task Handle_WhenCacheMiss_FetchesFromApiAndCaches()
+    public async Task Handle_WhenCacheMiss_FetchesFromBothApisAndCaches()
     {
         // Arrange
         _cacheService.GetAsync<WeatherDashboardResponse>(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((WeatherDashboardResponse?)null);
 
-        SetupForecastApi(CreateSampleLocation(), CreateSampleCurrentWeather(), CreateSampleDays());
+        SetupMockApis(CreateSampleLocation(), CreateSampleCurrentWeather(), CreateSampleDays());
 
         // Act
         var result = await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
@@ -64,21 +67,27 @@ public class GetWeatherDashboardQueryHandlerTests
     }
 
     [Fact]
-    public async Task Handle_AlwaysUsesMoscowCoordinates()
+    public async Task Handle_CallsBothCurrentAndForecastApis()
     {
         // Arrange
         _cacheService.GetAsync<WeatherDashboardResponse>(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((WeatherDashboardResponse?)null);
 
-        SetupForecastApi(CreateSampleLocation(), CreateSampleCurrentWeather(), CreateSampleDays());
+        SetupMockApis(CreateSampleLocation(), CreateSampleCurrentWeather(), CreateSampleDays());
 
         // Act
         await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
 
-        // Assert
+        // Assert — both API methods called with correct coordinates
+        var expectedCoordinates = WeatherDefaults.DefaultCoordinates;
+
+        await _weatherApiClient.Received(1).GetCurrentWeatherAsync(
+            Arg.Is<Coordinates>(c => c == expectedCoordinates),
+            Arg.Any<CancellationToken>());
+
         await _weatherApiClient.Received(1).GetForecastAsync(
-            Arg.Is<Coordinates>(c => c == Coordinates.Moscow),
-            3,
+            Arg.Is<Coordinates>(c => c == expectedCoordinates),
+            WeatherDefaults.ForecastDays,
             Arg.Any<CancellationToken>());
     }
 
@@ -116,7 +125,7 @@ public class GetWeatherDashboardQueryHandlerTests
             CreateDay(new DateOnly(2026, 4, 10), tomorrowHours),
         };
 
-        SetupForecastApi(location, CreateSampleCurrentWeather(), days);
+        SetupMockApis(location, CreateSampleCurrentWeather(), days);
 
         // Act
         var result = await _handler.Handle(new GetWeatherDashboardQuery(), CancellationToken.None);
@@ -125,10 +134,13 @@ public class GetWeatherDashboardQueryHandlerTests
         result.HourlyForecast.Should().HaveCount(6); // 3 remaining today + 3 tomorrow
     }
 
-    private void SetupForecastApi(Location location, CurrentWeather current, List<DayForecast> days)
+    private void SetupMockApis(Location location, CurrentWeather current, List<DayForecast> days)
     {
+        _weatherApiClient.GetCurrentWeatherAsync(Arg.Any<Coordinates>(), Arg.Any<CancellationToken>())
+            .Returns((location, current));
+
         _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns((location, current, days));
+            .Returns((location, days));
     }
 
     private static WeatherDashboardResponse CreateSampleResponse() => new()
@@ -173,10 +185,8 @@ public class GetWeatherDashboardQueryHandlerTests
     private static DayForecast CreateDay(DateOnly date, List<HourForecast> hours) => new()
     {
         Date = date,
-        MaxTempCelsius = 25,
-        MinTempCelsius = 15,
-        AvgTempCelsius = 20,
-        MaxWindSpeedKph = 20,
+        TemperatureRange = new TemperatureRange(25, 15, 20),
+        MaxWind = new Wind(20, string.Empty, 0),
         AvgHumidity = 60,
         ChanceOfRain = 30,
         TotalPrecipitationMm = 2.5,
@@ -189,11 +199,10 @@ public class GetWeatherDashboardQueryHandlerTests
     private static HourForecast CreateHour(DateTime time) => new()
     {
         Time = time,
-        TempCelsius = 20,
-        FeelsLikeCelsius = 18,
+        Temperature = new Temperature(20, 18),
         ConditionText = "Clear",
         ConditionIconUrl = "https://cdn.weatherapi.com/weather/64x64/day/113.png",
-        WindSpeedKph = 10,
+        Wind = new Wind(10, string.Empty, 0),
         Humidity = 50,
         ChanceOfRain = 0,
         IsDay = true

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using WeatherForecast.Application.Interfaces;
 using WeatherForecast.Infrastructure.Caching;
 using WeatherForecast.Infrastructure.Configuration;
@@ -13,29 +14,24 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddWeatherApiClient(configuration);
+        services.AddWeatherApiClient();
         services.AddCaching(configuration);
 
         return services;
     }
 
-    private static void AddWeatherApiClient(
-        this IServiceCollection services,
-        IConfiguration configuration)
+    private static void AddWeatherApiClient(this IServiceCollection services)
     {
         services.AddOptions<WeatherApiOptions>()
             .BindConfiguration(WeatherApiOptions.SectionName)
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        var weatherOptions = configuration
-            .GetRequiredSection(WeatherApiOptions.SectionName)
-            .Get<WeatherApiOptions>()!;
-
-        services.AddHttpClient<IWeatherApiClient, WeatherApiClient>(client =>
+        services.AddHttpClient<IWeatherApiClient, WeatherApiClient>((sp, client) =>
         {
-            client.BaseAddress = new Uri(weatherOptions.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(weatherOptions.TimeoutSeconds);
+            var opts = sp.GetRequiredService<IOptions<WeatherApiOptions>>().Value;
+            client.BaseAddress = new Uri(opts.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(opts.TimeoutSeconds);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
         })
         .AddStandardResilienceHandler(options =>

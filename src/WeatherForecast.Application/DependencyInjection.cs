@@ -11,7 +11,6 @@ public static class DependencyInjection
         {
             cfg.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly);
             cfg.AddOpenBehavior(typeof(LoggingBehavior<,>));
-            cfg.AddOpenBehavior(typeof(PerformanceBehavior<,>));
         });
 
         return services;

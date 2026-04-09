@@ -91,8 +91,12 @@ public class WeatherEndpointTests : IClassFixture<WebApplicationFactory<Program>
     public async Task GetDashboard_WhenApiThrows_ReturnsServiceUnavailable()
     {
         // Arrange
+        _weatherApiClient.GetCurrentWeatherAsync(Arg.Any<Coordinates>(), Arg.Any<CancellationToken>())
+            .Returns<(Domain.Entities.Location, Domain.Entities.CurrentWeather)>(
+                x => throw new HttpRequestException("Weather API is down"));
+
         _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns<(Domain.Entities.Location, Domain.Entities.CurrentWeather, List<Domain.Entities.DayForecast>)>(
+            .Returns<(Domain.Entities.Location, List<Domain.Entities.DayForecast>)>(
                 x => throw new HttpRequestException("Weather API is down"));
 
         // Act
@@ -104,63 +108,65 @@ public class WeatherEndpointTests : IClassFixture<WebApplicationFactory<Program>
 
     private void SetupMockWeatherApi()
     {
-        _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns((
-                new Domain.Entities.Location
-                {
-                    Name = "Moscow",
-                    Region = "Moscow City",
-                    Country = "Russia",
-                    Latitude = 55.75,
-                    Longitude = 37.62,
-                    TimeZone = "Europe/Moscow",
-                    LocalTime = DateTime.UtcNow
-                },
-                new Domain.Entities.CurrentWeather
-                {
-                    Temperature = new Domain.ValueObjects.Temperature(22.0, 20.0),
-                    Wind = new Domain.ValueObjects.Wind(15.0, "NW", 315),
-                    Humidity = 55,
-                    PressureMb = 1015,
-                    CloudCover = 40,
-                    UvIndex = 4,
-                    VisibilityKm = 10,
-                    ConditionText = "Partly cloudy",
-                    ConditionIconUrl = "https://cdn.weatherapi.com/weather/64x64/day/116.png",
-                    IsDay = true,
-                    LastUpdated = DateTime.UtcNow
-                },
-                new List<Domain.Entities.DayForecast>
-                {
+        var location = new Domain.Entities.Location
+        {
+            Name = "Moscow",
+            Region = "Moscow City",
+            Country = "Russia",
+            Latitude = 55.75,
+            Longitude = 37.62,
+            TimeZone = "Europe/Moscow",
+            LocalTime = DateTime.UtcNow
+        };
+
+        var current = new Domain.Entities.CurrentWeather
+        {
+            Temperature = new Temperature(22.0, 20.0),
+            Wind = new Wind(15.0, "NW", 315),
+            Humidity = 55,
+            PressureMb = 1015,
+            CloudCover = 40,
+            UvIndex = 4,
+            VisibilityKm = 10,
+            ConditionText = "Partly cloudy",
+            ConditionIconUrl = "https://cdn.weatherapi.com/weather/64x64/day/116.png",
+            IsDay = true,
+            LastUpdated = DateTime.UtcNow
+        };
+
+        var days = new List<Domain.Entities.DayForecast>
+        {
+            new()
+            {
+                Date = DateOnly.FromDateTime(DateTime.UtcNow),
+                TemperatureRange = new TemperatureRange(25, 15, 20),
+                MaxWind = new Wind(20, string.Empty, 0),
+                AvgHumidity = 60,
+                ChanceOfRain = 30,
+                TotalPrecipitationMm = 2.5,
+                UvIndex = 5,
+                ConditionText = "Partly cloudy",
+                ConditionIconUrl = "https://cdn.weatherapi.com/weather/64x64/day/116.png",
+                Hours = [
                     new()
                     {
-                        Date = DateOnly.FromDateTime(DateTime.UtcNow),
-                        MaxTempCelsius = 25,
-                        MinTempCelsius = 15,
-                        AvgTempCelsius = 20,
-                        MaxWindSpeedKph = 20,
-                        AvgHumidity = 60,
-                        ChanceOfRain = 30,
-                        TotalPrecipitationMm = 2.5,
-                        UvIndex = 5,
-                        ConditionText = "Partly cloudy",
-                        ConditionIconUrl = "https://cdn.weatherapi.com/weather/64x64/day/116.png",
-                        Hours = [
-                            new()
-                            {
-                                Time = DateTime.UtcNow.AddHours(1),
-                                TempCelsius = 22,
-                                FeelsLikeCelsius = 20,
-                                ConditionText = "Clear",
-                                ConditionIconUrl = "https://cdn.weatherapi.com/weather/64x64/day/113.png",
-                                WindSpeedKph = 10,
-                                Humidity = 50,
-                                ChanceOfRain = 0,
-                                IsDay = true
-                            }
-                        ]
+                        Time = DateTime.UtcNow.AddHours(1),
+                        Temperature = new Temperature(22, 20),
+                        ConditionText = "Clear",
+                        ConditionIconUrl = "https://cdn.weatherapi.com/weather/64x64/day/113.png",
+                        Wind = new Wind(10, string.Empty, 0),
+                        Humidity = 50,
+                        ChanceOfRain = 0,
+                        IsDay = true
                     }
-                }
-            ));
+                ]
+            }
+        };
+
+        _weatherApiClient.GetCurrentWeatherAsync(Arg.Any<Coordinates>(), Arg.Any<CancellationToken>())
+            .Returns((location, current));
+
+        _weatherApiClient.GetForecastAsync(Arg.Any<Coordinates>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((location, days));
     }
 }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using MediatR;
 using Microsoft.Extensions.Logging;
+using WeatherForecast.Application.Configuration;
 using WeatherForecast.Application.DTOs;
 using WeatherForecast.Application.Interfaces;
 using WeatherForecast.Application.Mapping;
@@ -23,7 +24,7 @@ public sealed partial class GetWeatherDashboardQueryHandler(
         GetWeatherDashboardQuery request,
         CancellationToken cancellationToken)
     {
-        var coordinates = Coordinates.Moscow;
+        var coordinates = WeatherDefaults.DefaultCoordinates;
         var cacheKey = BuildCacheKey(coordinates);
 
         var cached = await cacheService.GetAsync<WeatherDashboardResponse>(cacheKey, cancellationToken);
@@ -35,8 +36,15 @@ public sealed partial class GetWeatherDashboardQueryHandler(
 
         LogFetchingFromApi(logger);
 
-        var (location, current, days) = await weatherApiClient.GetForecastAsync(
-            coordinates, days: 3, cancellationToken);
+        // Two separate API calls as per requirements (current.json + forecast.json)
+        // Executed in parallel for performance
+        var currentTask = weatherApiClient.GetCurrentWeatherAsync(coordinates, cancellationToken);
+        var forecastTask = weatherApiClient.GetForecastAsync(coordinates, WeatherDefaults.ForecastDays, cancellationToken);
+
+        await Task.WhenAll(currentTask, forecastTask);
+
+        var (location, current) = currentTask.Result;
+        var (_, days) = forecastTask.Result;
 
         var now = location.LocalTime;
         var tomorrow = DateOnly.FromDateTime(now).AddDays(1);

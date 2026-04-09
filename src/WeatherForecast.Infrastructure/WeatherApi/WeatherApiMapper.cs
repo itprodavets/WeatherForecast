@@ -40,10 +40,8 @@ internal static class WeatherApiMapper
     public static DayForecast MapToDay(ForecastDayModel model) => new()
     {
         Date = DateOnly.ParseExact(model.Date, DateFormat, CultureInfo.InvariantCulture),
-        MaxTempCelsius = model.Day.MaxTempC,
-        MinTempCelsius = model.Day.MinTempC,
-        AvgTempCelsius = model.Day.AvgTempC,
-        MaxWindSpeedKph = model.Day.MaxWindKph,
+        TemperatureRange = new TemperatureRange(model.Day.MaxTempC, model.Day.MinTempC, model.Day.AvgTempC),
+        MaxWind = new Wind(model.Day.MaxWindKph, string.Empty, 0),
         AvgHumidity = model.Day.AvgHumidity,
         ChanceOfRain = model.Day.DailyChanceOfRain,
         TotalPrecipitationMm = model.Day.TotalPrecipMm,
@@ -56,11 +54,10 @@ internal static class WeatherApiMapper
     public static HourForecast MapToHour(HourModel model) => new()
     {
         Time = ParseDateTime(model.Time),
-        TempCelsius = model.TempC,
-        FeelsLikeCelsius = model.FeelsLikeC,
+        Temperature = new Temperature(model.TempC, model.FeelsLikeC),
         ConditionText = model.Condition.Text,
         ConditionIconUrl = NormalizeIconUrl(model.Condition.Icon),
-        WindSpeedKph = model.WindKph,
+        Wind = new Wind(model.WindKph, string.Empty, 0),
         Humidity = model.Humidity,
         ChanceOfRain = model.ChanceOfRain,
         IsDay = model.IsDay == 1

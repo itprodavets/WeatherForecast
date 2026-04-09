@@ -2,13 +2,19 @@ using System.Text.Json.Serialization;
 
 namespace WeatherForecast.Infrastructure.WeatherApi.Models;
 
-public sealed class ForecastResponse
+public sealed class CurrentResponse
 {
     [JsonPropertyName("location")]
     public required LocationModel Location { get; set; }
 
     [JsonPropertyName("current")]
     public required CurrentModel Current { get; set; }
+}
+
+public sealed class ForecastResponse
+{
+    [JsonPropertyName("location")]
+    public required LocationModel Location { get; set; }
 
     [JsonPropertyName("forecast")]
     public required ForecastModel Forecast { get; set; }

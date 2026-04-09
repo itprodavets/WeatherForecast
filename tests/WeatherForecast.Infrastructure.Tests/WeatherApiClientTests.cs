@@ -13,6 +13,8 @@ namespace WeatherForecast.Infrastructure.Tests;
 
 public class WeatherApiClientTests : IDisposable
 {
+    private static readonly Coordinates Moscow = new(55.7558, 37.6173);
+
     private readonly WireMockServer _server;
     private readonly WeatherApiClient _client;
 
@@ -33,17 +35,17 @@ public class WeatherApiClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GetForecastAsync_ReturnsForecastWithLocationAndCurrentAndDays()
+    public async Task GetCurrentWeatherAsync_ReturnsLocationAndCurrentWeather()
     {
         // Arrange
-        _server.Given(Request.Create().WithPath("/v1/forecast.json").UsingGet())
+        _server.Given(Request.Create().WithPath("/v1/current.json").UsingGet())
             .RespondWith(Response.Create()
                 .WithStatusCode(200)
                 .WithHeader("Content-Type", "application/json")
-                .WithBody(ForecastJson));
+                .WithBody(CurrentJson));
 
         // Act
-        var (location, current, days) = await _client.GetForecastAsync(Coordinates.Moscow, 3);
+        var (location, current) = await _client.GetCurrentWeatherAsync(Moscow);
 
         // Assert
         location.Should().NotBeNull();
@@ -58,12 +60,42 @@ public class WeatherApiClientTests : IDisposable
         current.Wind.Direction.Should().Be("NW");
         current.ConditionText.Should().Be("Partly cloudy");
         current.IsDay.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetCurrentWeatherAsync_WhenApiReturnsError_ThrowsHttpRequestException()
+    {
+        // Arrange
+        _server.Given(Request.Create().WithPath("/v1/current.json").UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError));
+
+        // Act & Assert
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => _client.GetCurrentWeatherAsync(Moscow));
+    }
+
+    [Fact]
+    public async Task GetForecastAsync_ReturnsForecastWithLocationAndDays()
+    {
+        // Arrange
+        _server.Given(Request.Create().WithPath("/v1/forecast.json").UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(ForecastJson));
+
+        // Act
+        var (location, days) = await _client.GetForecastAsync(Moscow, 3);
+
+        // Assert
+        location.Should().NotBeNull();
+        location.Name.Should().Be("Moscow");
 
         days.Should().HaveCount(1);
-        days[0].MaxTempCelsius.Should().Be(25.0);
-        days[0].MinTempCelsius.Should().Be(14.0);
+        days[0].TemperatureRange.MaxCelsius.Should().Be(25.0);
+        days[0].TemperatureRange.MinCelsius.Should().Be(14.0);
         days[0].Hours.Should().HaveCount(1);
-        days[0].Hours[0].TempCelsius.Should().Be(20.0);
+        days[0].Hours[0].Temperature.Celsius.Should().Be(20.0);
     }
 
     [Fact]
@@ -75,7 +107,24 @@ public class WeatherApiClientTests : IDisposable
 
         // Act & Assert
         await Assert.ThrowsAsync<HttpRequestException>(
-            () => _client.GetForecastAsync(Coordinates.Moscow, 3));
+            () => _client.GetForecastAsync(Moscow, 3));
+    }
+
+    [Fact]
+    public async Task GetCurrentWeatherAsync_CorrectlyMapsIconUrl()
+    {
+        // Arrange
+        _server.Given(Request.Create().WithPath("/v1/current.json").UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(CurrentJson));
+
+        // Act
+        var (_, current) = await _client.GetCurrentWeatherAsync(Moscow);
+
+        // Assert — icon URL should be normalized with https:
+        current.ConditionIconUrl.Should().StartWith("https://");
     }
 
     [Fact]
@@ -89,11 +138,33 @@ public class WeatherApiClientTests : IDisposable
                 .WithBody(ForecastJson));
 
         // Act
-        var (_, current, days) = await _client.GetForecastAsync(Coordinates.Moscow, 3);
+        var (_, days) = await _client.GetForecastAsync(Moscow, 3);
 
-        // Assert — icon URL should be normalized with https:
-        current.ConditionIconUrl.Should().StartWith("https://");
+        // Assert
         days[0].ConditionIconUrl.Should().StartWith("https://");
+    }
+
+    [Fact]
+    public async Task GetCurrentWeatherAsync_SendsCorrectQueryParameters()
+    {
+        // Arrange
+        _server.Given(Request.Create().WithPath("/v1/current.json").UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(CurrentJson));
+
+        // Act
+        await _client.GetCurrentWeatherAsync(Moscow);
+
+        // Assert
+        var requests = _server.LogEntries;
+        requests.Should().ContainSingle();
+
+        var request = requests[0];
+        var query = request.RequestMessage!.RawQuery ?? string.Empty;
+        query.Should().Contain("key=test-key");
+        query.Should().Contain("q=55.7558,37.6173");
     }
 
     [Fact]
@@ -107,9 +178,9 @@ public class WeatherApiClientTests : IDisposable
                 .WithBody(ForecastJson));
 
         // Act
-        await _client.GetForecastAsync(Coordinates.Moscow, 3);
+        await _client.GetForecastAsync(Moscow, 3);
 
-        // Assert — verify the request was made with correct parameters
+        // Assert
         var requests = _server.LogEntries;
         requests.Should().ContainSingle();
 
@@ -126,7 +197,7 @@ public class WeatherApiClientTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private const string ForecastJson = """
+    private const string CurrentJson = """
         {
             "location": {
                 "name": "Moscow",
@@ -154,6 +225,20 @@ public class WeatherApiClientTests : IDisposable
                 },
                 "is_day": 1,
                 "last_updated": "2026-04-09 14:00"
+            }
+        }
+        """;
+
+    private const string ForecastJson = """
+        {
+            "location": {
+                "name": "Moscow",
+                "region": "Moscow City",
+                "country": "Russia",
+                "lat": 55.75,
+                "lon": 37.62,
+                "tz_id": "Europe/Moscow",
+                "localtime": "2026-04-09 14:00"
             },
             "forecast": {
                 "forecastday": [

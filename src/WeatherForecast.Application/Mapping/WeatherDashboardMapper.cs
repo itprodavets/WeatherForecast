@@ -35,11 +35,11 @@ public static class WeatherDashboardMapper
     public static HourForecastDto ToDto(this HourForecast hour) => new()
     {
         Time = hour.Time,
-        TempCelsius = hour.TempCelsius,
-        FeelsLikeCelsius = hour.FeelsLikeCelsius,
+        TempCelsius = hour.Temperature.Celsius,
+        FeelsLikeCelsius = hour.Temperature.FeelsLike,
         ConditionText = hour.ConditionText,
         ConditionIconUrl = hour.ConditionIconUrl,
-        WindSpeedKph = hour.WindSpeedKph,
+        WindSpeedKph = hour.Wind.SpeedKph,
         Humidity = hour.Humidity,
         ChanceOfRain = hour.ChanceOfRain,
         IsDay = hour.IsDay
@@ -48,10 +48,10 @@ public static class WeatherDashboardMapper
     public static DayForecastDto ToDto(this DayForecast day) => new()
     {
         Date = day.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-        MaxTempCelsius = day.MaxTempCelsius,
-        MinTempCelsius = day.MinTempCelsius,
-        AvgTempCelsius = day.AvgTempCelsius,
-        MaxWindSpeedKph = day.MaxWindSpeedKph,
+        MaxTempCelsius = day.TemperatureRange.MaxCelsius,
+        MinTempCelsius = day.TemperatureRange.MinCelsius,
+        AvgTempCelsius = day.TemperatureRange.AvgCelsius,
+        MaxWindSpeedKph = day.MaxWind.SpeedKph,
         AvgHumidity = day.AvgHumidity,
         ChanceOfRain = day.ChanceOfRain,
         TotalPrecipitationMm = day.TotalPrecipitationMm,

@@ -9,6 +9,8 @@ public sealed partial class LoggingBehavior<TRequest, TResponse>(
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : notnull
 {
+    private const long WarningThresholdMs = 500;
+
     public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
@@ -22,7 +24,16 @@ public sealed partial class LoggingBehavior<TRequest, TResponse>(
         var response = await next(cancellationToken);
         stopwatch.Stop();
 
-        LogHandled(logger, requestName, stopwatch.ElapsedMilliseconds);
+        var elapsedMs = stopwatch.ElapsedMilliseconds;
+
+        if (elapsedMs > WarningThresholdMs)
+        {
+            LogLongRunning(logger, requestName, elapsedMs);
+        }
+        else
+        {
+            LogHandled(logger, requestName, elapsedMs);
+        }
 
         return response;
     }
@@ -32,4 +43,7 @@ public sealed partial class LoggingBehavior<TRequest, TResponse>(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Handled {RequestName} in {ElapsedMs}ms")]
     private static partial void LogHandled(ILogger logger, string requestName, long elapsedMs);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Long running request: {RequestName} ({ElapsedMs}ms)")]
+    private static partial void LogLongRunning(ILogger logger, string requestName, long elapsedMs);
 }
