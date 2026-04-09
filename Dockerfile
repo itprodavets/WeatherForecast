@@ -3,7 +3,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0-preview AS build
 WORKDIR /src
 
 COPY Directory.Build.props Directory.Packages.props nuget.config ./
-COPY WeatherForecast.sln ./
+COPY WeatherForecast.slnx ./
 COPY src/WeatherForecast.Domain/WeatherForecast.Domain.csproj src/WeatherForecast.Domain/
 COPY src/WeatherForecast.Application/WeatherForecast.Application.csproj src/WeatherForecast.Application/
 COPY src/WeatherForecast.Infrastructure/WeatherForecast.Infrastructure.csproj src/WeatherForecast.Infrastructure/
