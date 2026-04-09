@@ -1,8 +1,18 @@
 # Weather Forecast
 
+> **Test Assignment** for Full Stack .NET Senior position at **Power International Tires** (Пауэр Интернэшнл-шины) — one of the largest federal distributors of tires and wheels in Russia, with over 1,300 employees across 28 offices nationwide.
+
 A high-performance weather web application built with **.NET 10** and **React + TypeScript**, following **Clean Architecture** and **CQRS** patterns.
 
 Displays current weather, hourly forecast (remaining hours today + all hours tomorrow), and a 3-day forecast for **Moscow**, powered by [WeatherAPI.com](https://www.weatherapi.com/).
+
+## Screenshots
+
+### Weather Dashboard
+![Weather Dashboard](docs/screenshots/dashboard.png)
+
+### Swagger API Documentation
+![Swagger UI](docs/screenshots/swagger.png)
 
 ## Architecture
 
@@ -70,6 +80,22 @@ Domain <- Application <- Infrastructure
 - [Node.js 22+](https://nodejs.org/)
 - [Docker](https://www.docker.com/) (optional, for Redis)
 
+### Run with Docker (recommended)
+
+```bash
+docker compose up --build
+```
+
+This starts all 3 services:
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Client (UI)** | http://localhost:3000 | React SPA served by Nginx |
+| **API** | http://localhost:5000 | .NET Web API |
+| **Redis** | localhost:6379 | Distributed cache (L2) |
+
+Nginx reverse-proxies `/api/*` requests from the client to the API, so the UI works seamlessly at http://localhost:3000.
+
 ### Run Locally (Development)
 
 **Backend:**
@@ -89,14 +115,6 @@ cd src/WeatherForecast.Client
 npm install
 npm run dev
 # UI: http://localhost:5173 (proxies /api to backend)
-```
-
-### Run with Docker
-
-```bash
-docker compose up --build
-# UI: http://localhost:3000
-# API: http://localhost:5000
 ```
 
 ### Run Tests
